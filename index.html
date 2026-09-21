@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>そらへ — モノと思い出を手放すために</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;800&family=Zen+Kaku+Gothic+New:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="stars"></div>
+
+  <header class="site-header">
+    <h1 class="logo">そらへ</h1>
+    <p class="tagline">手放すことは、忘れることではありません。<br />そっと空へ還すこと。</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-tab="thing" role="tab">モノを手放す</button>
+    <button class="tab" data-tab="memory" role="tab">思い出を手放す</button>
+  </nav>
+
+  <main class="stage">
+    <!-- モノ フォーム -->
+    <section class="panel is-active" id="panel-thing">
+      <form id="thing-form" class="form">
+        <div class="field">
+          <label for="thing-photo">モノの写真</label>
+          <div class="dropzone" id="thing-dropzone">
+            <input type="file" id="thing-photo" accept="image/*" hidden />
+            <img id="thing-preview" alt="プレビュー" hidden />
+            <div class="dropzone-hint" id="thing-hint">
+              <span class="dz-icon">＋</span>
+              <span>写真を選ぶ</span>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="thing-name">モノの名前（任意）</label>
+          <input type="text" id="thing-name" placeholder="例：はじめての腕時計" maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="thing-message">このモノへ伝えたいこと</label>
+          <textarea id="thing-message" rows="4" placeholder="長い間ありがとう。たくさん一緒に過ごしたね。" maxlength="300"></textarea>
+        </div>
+        <button type="submit" class="send-btn">空へ還す</button>
+      </form>
+    </section>
+
+    <!-- 思い出 フォーム -->
+    <section class="panel" id="panel-memory">
+      <form id="memory-form" class="form">
+        <div class="field">
+          <label for="memory-title">思い出のタイトル（任意）</label>
+          <input type="text" id="memory-title" placeholder="例：あの夏の日" maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="memory-text">手放したい思い出</label>
+          <textarea id="memory-text" rows="6" placeholder="心に残っている出来事や、もう手放したい記憶を書いてください。" maxlength="600"></textarea>
+        </div>
+        <button type="submit" class="send-btn">空へ還す</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- 供養アニメーション オーバーレイ -->
+  <div class="ceremony" id="ceremony" hidden>
+    <div id="canvas-holder"></div>
+    <div class="ceremony-message" id="ceremony-message" hidden>
+      <p class="from-label" id="from-label">— あなたへ —</p>
+      <p class="farewell-text" id="farewell-text"></p>
+      <button class="close-btn" id="close-btn">そっと閉じる</button>
+    </div>
+    <div class="speed-control" id="speed-control">
+      <label for="speed">はやさ</label>
+      <input type="range" id="speed" min="0.3" max="2.5" step="0.1" value="1" />
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <small>写真もテキストも、どこにも保存されません。すべてこの画面の中だけで還っていきます。</small>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
