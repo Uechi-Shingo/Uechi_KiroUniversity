@@ -333,6 +333,20 @@ input[type="text"]:focus, textarea:focus {
   color: rgba(185, 192, 224, 0.5);
 }
 
+/* バージョン表示（左下固定） */
+.version-badge {
+  position: fixed;
+  left: 0.9rem;
+  bottom: 0.7rem;
+  z-index: 100;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: rgba(185, 192, 224, 0.45);
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  user-select: none;
+  pointer-events: none;
+}
+
 @media (max-width: 520px) {
   .logo { font-size: 2.1rem; }
   .farewell-text { font-size: 1.15rem; line-height: 2.2; }

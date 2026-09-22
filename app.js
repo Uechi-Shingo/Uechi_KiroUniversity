@@ -2,6 +2,13 @@
    そらへ — モノと思い出を手放すためのWebアプリ
    ========================================================= */
 
+/* ---------- アプリのバージョン ---------- */
+const APP_VERSION = 'v1.1.0';
+(function showVersion() {
+  const badge = document.getElementById('version-badge');
+  if (badge) badge.textContent = APP_VERSION;
+})();
+
 /* ---------- 起動時：供養オーバーレイを確実に隠す ---------- */
 // CSS の display:flex が hidden 属性を上書きするのを防ぐための保険。
 (function ensureCeremonyHidden() {
@@ -69,13 +76,26 @@ function handleFile(file) {
 
 /* ---------- お別れメッセージ生成 ---------- */
 // 手放す相手（モノ/思い出）から届く、お別れとお礼のメッセージ。
-// ユーザーの言葉を受け取り、やさしく応答する。
+//
+// 【現在の実装：モック】
+// 生成AIのAPIは連携していません。あらかじめ用意した定型文から
+// ユーザーの入力に応じて選び・差し込む「モック」方式です。
+// 将来 API 連携する場合は buildThingMessage / buildMemoryMessage を
+// 非同期化して差し替えれば、呼び出し側はそのまま使えます。
 
 const thingReplies = [
   (name) => `${name}、そばにいられて幸せでした。\nあなたの毎日の中にいられたこと、\nずっと忘れません。ありがとう。`,
   (name) => `もう充分です。\n${name}のことを大切にしてくれて、\n本当にありがとう。\nどうか身軽になってください。`,
   (name) => `お別れはさみしいけれど、\nあなたと過ごした時間は\nちゃんと私の中に残ります。\nさようなら、そしてありがとう。`,
   (name) => `役目を終えられて、うれしいです。\n${name}のこと、大好きでした。\nこれからも、元気で。`,
+  (name) => `${name}、ずっと使ってくれてありがとう。\nくたびれるまで一緒だったね。\nどうか、笑顔で見送って。`,
+  (name) => `わたしの役目はここまで。\n${name}と出会えて、しあわせでした。\n新しい毎日を、身軽に歩いてね。`,
+];
+
+// メッセージを書いてくれた人には、その気持ちに触れる一言を添える
+const thingRepliesWithMessage = [
+  (name) => `あなたの言葉、たしかに受け取りました。\n${name}、こちらこそありがとう。\nもう、そっと手放して大丈夫です。`,
+  (name) => `そんな風に思ってくれていたなんて。\n${name}として、幸せな時間でした。\nさようなら。どうか、お元気で。`,
 ];
 
 const memoryReplies = [
@@ -83,17 +103,29 @@ const memoryReplies = [
   `よく抱えてきましたね。\nもう、下ろしていいのです。\nあなたが軽やかになれますように。`,
   `覚えていたことも、忘れていくことも、\nどちらもやさしさです。\nゆっくり手放していきましょう。`,
   `その記憶は消えるのではなく、\n夜空の星のひとつになります。\nいつでも見上げれば、そこにあります。`,
+  `ここまで運んでくれて、ありがとう。\nこの思い出は、もうあなたを縛りません。\n風にのって、遠くへ還っていきます。`,
+];
+
+// 長い思い出（たくさん書いてくれた人）には、より寄り添う言葉を
+const memoryRepliesLong = [
+  `たくさんの言葉、ちゃんと受け取りました。\nそれだけ大切だったのですね。\nもう充分です。ゆっくり、手放していきましょう。`,
+  `ここまで書けたあなたは、もう大丈夫。\nこの思い出は空へ昇り、\nあなたの心に静かな余白を残します。`,
 ];
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-function buildThingMessage(name) {
+// name: モノの名前 / message: ユーザーがモノへ書いた本文
+function buildThingMessage(name, message) {
   const who = name && name.trim() ? name.trim() : 'わたし';
-  return pick(thingReplies)(who);
+  const hasMessage = message && message.trim().length > 0;
+  const table = hasMessage ? thingRepliesWithMessage : thingReplies;
+  return pick(table)(who);
 }
 
-function buildMemoryMessage() {
-  return pick(memoryReplies);
+// text: ユーザーが書いた思い出の本文
+function buildMemoryMessage(text) {
+  const isLong = text && text.trim().length >= 60;
+  return isLong ? pick(memoryRepliesLong) : pick(memoryReplies);
 }
 
 /* ---------- 供養アニメーション (p5.js) ---------- */
@@ -326,7 +358,8 @@ document.getElementById('thing-form').addEventListener('submit', (e) => {
     return;
   }
   const name = document.getElementById('thing-name').value;
-  const msg = buildThingMessage(name);
+  const userMessage = document.getElementById('thing-message').value;
+  const msg = buildThingMessage(name, userMessage);
   startCeremony('thing', uploadedImage, msg);
 });
 
@@ -339,6 +372,6 @@ document.getElementById('memory-form').addEventListener('submit', (e) => {
     setTimeout(() => { ta.style.borderColor = ''; }, 800);
     return;
   }
-  const msg = buildMemoryMessage();
+  const msg = buildMemoryMessage(text);
   startCeremony('memory', null, msg);
 });
