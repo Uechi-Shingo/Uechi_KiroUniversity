@@ -3,7 +3,7 @@
    ========================================================= */
 
 /* ---------- アプリのバージョン ---------- */
-const APP_VERSION = 'v1.3.0-debug';
+const APP_VERSION = 'v1.4.0';
 (function showVersion() {
   const badge = document.getElementById('version-badge');
   if (badge) badge.textContent = APP_VERSION;
@@ -142,23 +142,37 @@ let animSpeed = 1;
 let rafId = null;
 speedSlider.addEventListener('input', (e) => { animSpeed = parseFloat(e.target.value); });
 
+// 演出タイミング（秒）※スローでゆったり
+const HOLD_TIME = 2.2;    // 最初に写真/光を静止して見せる時間
+const RISE_SPAN = 2.5;    // 下から順に発ち始めるまでの広がり
+
 // パーティクル：写真の各サンプル点、または思い出の光の粒
 class Particle {
-  constructor(x, y, r, g, b) {
+  // yNorm: 画面内の縦位置(0=上,1=下)。下にあるものほど早く発つ。
+  constructor(x, y, r, g, b, yNorm) {
     this.homeX = x;
     this.homeY = y;
     this.x = x;
     this.y = y;
-    this.r = r; this.g = g; this.b = b;
-    this.size = 2.6;
-    // 上へ、少し広がりながら還る
+    // 少しオレンジ寄りに色を補正（暖色の余韻）
+    this.r = Math.min(255, r + 40);
+    this.g = Math.min(255, g + 8);
+    this.b = Math.max(0, b - 30);
+    this.baseSize = 2.4 + Math.random() * 1.2;
+    this.size = this.baseSize;
+    // 下にある粒ほど先に、上の粒ほど後から発つ
+    this.delay = HOLD_TIME + (1 - yNorm) * RISE_SPAN + Math.random() * 0.5;
     this.wobble = Math.random() * Math.PI * 2;
-    this.wobbleSpeed = 1.2 + Math.random() * 2.4;   // 揺れ（毎秒）
-    this.delay = Math.random() * 1.1;               // 発つまでの遅れ（秒）
-    this.riseSpeed = 60 + Math.random() * 120;      // 上昇速度（px/秒）
-    this.driftX = (Math.random() - 0.5) * 40;       // 横ゆらぎ（px/秒）
+    this.wobbleSpeed = 0.8 + Math.random() * 1.6;   // 揺れ（毎秒）ゆっくり
+    this.riseSpeed = 34 + Math.random() * 66;       // 上昇速度（px/秒）スロー
+    this.driftX = (Math.random() - 0.5) * 26;       // 横ゆらぎ（px/秒）
     this.life = 1;
-    this.fadeDur = 2.2;                             // 消えるまでの時間（秒）
+    this.fadeDur = 3.6;                             // 消えるまでの時間（秒）長め
+    // 各粒がまとう暖色の光（オレンジ〜金）
+    const t = Math.random();
+    this.glowR = 255;
+    this.glowG = 150 + Math.floor(t * 80);          // 150〜230
+    this.glowB = 60 + Math.floor(t * 60);           // 60〜120
   }
 
   // t: 開始からの経過秒数（速度倍率込み）
@@ -166,21 +180,34 @@ class Particle {
     if (t < this.delay) { this.life = 1; return; }
     const traveled = t - this.delay;
     this.wobble += this.wobbleSpeed * (1 / 60);
-    this.x = this.homeX + Math.sin(this.wobble) * 14 + this.driftX * traveled;
+    this.x = this.homeX + Math.sin(this.wobble) * 16 + this.driftX * traveled;
     this.y = this.homeY - this.riseSpeed * traveled;
     this.life = Math.max(0, 1 - traveled / this.fadeDur);
-    this.size = 2.6 + Math.sin(this.wobble) * 1.2;
+    this.size = this.baseSize + Math.sin(this.wobble) * 1.0;
   }
+
+  // まだ発っていない（写真として静止中）か
+  get resting() { return this.life >= 1; }
 
   draw(ctx) {
     if (this.life <= 0) return;
     const a = this.life;
-    // ほのかな光暈
-    ctx.fillStyle = `rgba(255,243,214,${a * 0.22})`;
+    if (this.resting) {
+      // 静止中は写真の色そのままを不透明で描く（元の写真が見える）
+      ctx.fillStyle = `rgb(${this.r},${this.g},${this.b})`;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.baseSize, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    // 発ったあと：暖色の光暈（加算）＋ 写真の色の芯
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(${this.glowR},${this.glowG},${this.glowB},${a * 0.5})`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * 2.4, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, this.size * 2.6, 0, Math.PI * 2);
     ctx.fill();
-    // 光の粒
+    ctx.globalCompositeOperation = 'source-over';
+    // 芯は写真の色を保つ（白飛びを防ぐ）
     ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${a})`;
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
@@ -191,8 +218,6 @@ class Particle {
 }
 
 let fallbackTimer = null;
-const debugEl = document.getElementById('debug-readout');
-function dbg(line) { if (debugEl) debugEl.textContent = line; }
 
 function buildParticles(mode, image, W, H) {
   const particles = [];
@@ -229,7 +254,8 @@ function buildParticles(mode, image, W, H) {
           if (alpha < 30) continue;
           const px = cx - dw / 2 + xx * grid;
           const py = cy - dh / 2 + yy * grid;
-          particles.push(new Particle(px, py, data[idx], data[idx + 1], data[idx + 2]));
+          const yNorm = yy / sh; // 0=上, 1=下
+          particles.push(new Particle(px, py, data[idx], data[idx + 1], data[idx + 2], yNorm));
         }
       }
     }
@@ -243,11 +269,13 @@ function buildParticles(mode, image, W, H) {
       const rad = Math.random() * Math.min(W, H) * 0.22;
       const px = cx + Math.cos(ang) * rad;
       const py = cy + Math.sin(ang) * rad * 0.6;
+      // 暖色（オレンジ〜金）を主体に、ときどき淡い青
       const warm = Math.random();
-      const r = warm > 0.5 ? 255 : 160;
-      const g = warm > 0.5 ? 217 : 196;
-      const b = warm > 0.5 ? 160 : 255;
-      particles.push(new Particle(px, py, r, g, b));
+      const r = warm > 0.25 ? 255 : 150;
+      const g = warm > 0.25 ? 180 + Math.floor(Math.random() * 50) : 190;
+      const b = warm > 0.25 ? 90 + Math.floor(Math.random() * 50) : 255;
+      const yNorm = (py - (cy - Math.min(W, H) * 0.22)) / (Math.min(W, H) * 0.44);
+      particles.push(new Particle(px, py, r, g, b, Math.max(0, Math.min(1, yNorm))));
     }
   }
   return particles;
@@ -275,7 +303,17 @@ function startCeremony(mode, image, message) {
 
   // 粒を生成
   const particles = buildParticles(mode, image, W, H);
-  dbg('canvas: ' + W + 'x' + H + '\nparticles: ' + particles.length);
+
+  // 写真の元画像を静止フェーズで見せるための配置を計算
+  let photoRect = null;
+  if (mode === 'thing' && image && image.width > 0) {
+    const maxDim = Math.min(W, H) * 0.5;
+    const ratio = image.width / image.height;
+    let dw, dh;
+    if (ratio >= 1) { dw = maxDim; dh = maxDim / ratio; }
+    else { dh = maxDim; dw = maxDim * ratio; }
+    photoRect = { x: W / 2 - dw / 2, y: H / 2 - dh / 2, w: dw, h: dh };
+  }
 
   // 背景を塗る
   ctx.fillStyle = 'rgb(7,9,18)';
@@ -285,43 +323,49 @@ function startCeremony(mode, image, message) {
   let frame = 0;
   const startMs = performance.now();
 
-  // 保険：何があっても数秒後には必ずメッセージを表示する
+  // 保険：何があっても十分な時間が経てば必ずメッセージを表示する
   if (fallbackTimer) clearTimeout(fallbackTimer);
   fallbackTimer = setTimeout(() => {
     if (ceremonyMessage.hidden) revealMessage(message);
-  }, 8000);
+  }, 16000);
 
   function loop() {
     frame++;
     const elapsed = ((performance.now() - startMs) / 1000) * animSpeed;
+    const holding = elapsed < HOLD_TIME; // 写真をそのまま見せている段階か
 
-    // 残像を残すために半透明で塗り重ねる
-    ctx.fillStyle = 'rgba(7,9,18,0.22)';
-    ctx.fillRect(0, 0, W, H);
+    if (holding) {
+      // 静止フェーズ：毎フレーム完全に塗り直す
+      ctx.fillStyle = 'rgb(7,9,18)';
+      ctx.fillRect(0, 0, W, H);
+      // 元の写真をそのまま見せる（最後の1秒でそっと薄れ始める）
+      if (photoRect) {
+        const fadeStart = HOLD_TIME - 1.0;
+        const alpha = elapsed < fadeStart ? 1 : Math.max(0, 1 - (elapsed - fadeStart) / 1.0);
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(image, photoRect.x, photoRect.y, photoRect.w, photoRect.h);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      // 上昇フェーズ：残像を残して淡く塗り重ねる（線香花火のような尾）
+      ctx.fillStyle = 'rgba(7,9,18,0.16)';
+      ctx.fillRect(0, 0, W, H);
+    }
 
-    // 加算合成で光らせる
-    ctx.globalCompositeOperation = 'lighter';
     let aliveCount = 0;
     for (const part of particles) {
       part.update(elapsed);
-      part.draw(ctx);
+      // 静止フェーズでは、写真本体を見せるので粒は描かない
+      if (!holding) part.draw(ctx);
       if (!part.done) aliveCount++;
     }
-    ctx.globalCompositeOperation = 'source-over';
 
-    if (frame % 15 === 0) {
-      dbg('running f=' + frame + '\ncanvas: ' + W + 'x' + H +
-          '\nparticles: ' + particles.length + ' alive: ' + aliveCount +
-          '\nelapsed: ' + elapsed.toFixed(1) + 's');
-    }
-
-    // 粒がおおむね還ったら（または経過4.5秒で）メッセージを表示
-    if (!messageShown && (aliveCount < particles.length * 0.08 || elapsed > 4.5)) {
+    // 粒がおおむね還ったら（または十分に時間が経ったら）メッセージを表示
+    if (!messageShown && !holding && (aliveCount < particles.length * 0.06 || elapsed > 11)) {
       messageShown = true;
       revealMessage(message);
     }
 
-    // 粒が全部消えてメッセージも出たら、静かに描画継続（ゆらぎの余韻）
     rafId = requestAnimationFrame(loop);
   }
   rafId = requestAnimationFrame(loop);
