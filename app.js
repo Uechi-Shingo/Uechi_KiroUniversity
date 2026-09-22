@@ -3,7 +3,7 @@
    ========================================================= */
 
 /* ---------- アプリのバージョン ---------- */
-const APP_VERSION = 'v1.2.0';
+const APP_VERSION = 'v1.2.1-debug';
 (function showVersion() {
   const badge = document.getElementById('version-badge');
   if (badge) badge.textContent = APP_VERSION;
@@ -190,6 +190,8 @@ class Particle {
 }
 
 let fallbackTimer = null;
+const debugEl = document.getElementById('debug-readout');
+function dbg(line) { if (debugEl) debugEl.textContent = line; }
 
 function startCeremony(mode, image, message) {
   ceremony.hidden = false;
@@ -197,10 +199,19 @@ function startCeremony(mode, image, message) {
   fromLabel.textContent = mode === 'thing' ? '— モノより —' : '— 思い出より —';
   farewellText.textContent = '';
 
+  // p5.js が読み込めているか確認
+  if (typeof p5 === 'undefined') {
+    dbg('ERROR: p5.js が読み込めていません (CDN失敗の可能性)');
+    revealMessage(message);
+    return;
+  }
+
   if (p5Instance) { p5Instance.remove(); p5Instance = null; }
   // 前回のキャンバスが残っていたら消す
   const holder = document.getElementById('canvas-holder');
   if (holder) holder.innerHTML = '';
+
+  dbg('starting... p5 OK');
 
   // 保険：何があっても数秒後には必ずメッセージを表示する
   if (fallbackTimer) clearTimeout(fallbackTimer);
@@ -226,6 +237,7 @@ function startCeremony(mode, image, message) {
       p.background(7, 9, 18);
       buildParticles();
       startMs = p.millis();
+      dbg('setup done\ncanvas: ' + W + 'x' + H + '\nparticles: ' + particles.length);
     };
 
     function buildParticles() {
@@ -304,6 +316,12 @@ function startCeremony(mode, image, message) {
       if (p.frameCount % 8 === 0) {
         p.fill(255, 243, 214, 40);
         p.circle(W / 2 + (Math.random() - 0.5) * 60, H * 0.2 + Math.random() * 40, 3);
+      }
+
+      if (p.frameCount % 15 === 0) {
+        dbg('running f=' + p.frameCount + '\ncanvas: ' + W + 'x' + H +
+            '\nparticles: ' + particles.length + ' alive: ' + aliveCount +
+            '\nelapsed: ' + elapsed.toFixed(1) + 's');
       }
 
       // 粒がおおむね還ったら（または経過4.5秒で）メッセージを表示

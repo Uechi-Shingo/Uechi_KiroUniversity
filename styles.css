@@ -325,6 +325,21 @@ input[type="text"]:focus, textarea:focus {
 .speed-control label { font-size: 0.8rem; color: var(--ink-soft); }
 .speed-control input[type="range"] { width: 100px; accent-color: var(--accent); }
 
+/* デバッグ表示（左下・一時的） */
+.debug-readout {
+  position: absolute;
+  left: 1rem;
+  bottom: 3rem;
+  z-index: 5;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: #6cff9e;
+  font-family: monospace;
+  white-space: pre;
+  pointer-events: none;
+  text-shadow: 0 0 6px rgba(0,0,0,0.9);
+}
+
 .site-footer {
   position: relative;
   z-index: 1;
