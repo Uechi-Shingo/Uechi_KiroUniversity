@@ -3,7 +3,7 @@
    ========================================================= */
 
 /* ---------- アプリのバージョン ---------- */
-const APP_VERSION = 'v1.1.0';
+const APP_VERSION = 'v1.2.0';
 (function showVersion() {
   const badge = document.getElementById('version-badge');
   if (badge) badge.textContent = APP_VERSION;
@@ -151,23 +151,26 @@ class Particle {
     this.cx = cx; this.cy = cy;
     this.size = 2.6;
     // 上へ、少し広がりながら還る
-    this.angle = Math.random() * Math.PI * 2;
-    this.driftX = (Math.random() - 0.5) * 0.6;
-    this.riseSpeed = 0.4 + Math.random() * 1.2;
     this.wobble = Math.random() * Math.PI * 2;
-    this.wobbleSpeed = 0.02 + Math.random() * 0.04;
-    this.delay = Math.random() * 120; // ばらけて発つ
+    this.wobbleSpeed = 1.2 + Math.random() * 2.4;   // 揺れ（毎秒）
+    this.delay = Math.random() * 1.1;               // 発つまでの遅れ（秒）
+    this.riseSpeed = 60 + Math.random() * 120;       // 上昇速度（px/秒）
+    this.driftX = (Math.random() - 0.5) * 40;        // 横ゆらぎ（px/秒）
     this.life = 1;
+    this.fadeDur = 2.2;                              // 消えるまでの時間（秒）
   }
 
-  update(t, speed) {
+  // elapsed: 開始からの経過秒数 / speed: 速度倍率
+  update(elapsed, speed) {
+    const t = elapsed * speed;
     if (t < this.delay) { this.life = 1; return; }
-    this.wobble += this.wobbleSpeed * speed;
-    this.x += (this.driftX + Math.sin(this.wobble) * 0.4) * speed;
-    this.y -= this.riseSpeed * speed;
-    // 発ってからの経過時間で、ゆっくり消えていく
+    const dt = 1 / 60; // 位置更新の刻み（見た目の一貫性のため固定）
+    this.wobble += this.wobbleSpeed * dt;
+    this.x = this.homeX + Math.sin(this.wobble) * 14 + this.driftX * (t - this.delay);
+    this.y = this.homeY - this.riseSpeed * (t - this.delay);
+    // 発ってからの経過で、ゆっくり消えていく
     const traveled = t - this.delay;
-    this.life = Math.max(0, 1 - traveled / 260);
+    this.life = Math.max(0, 1 - traveled / this.fadeDur);
     this.size = 2.6 + Math.sin(this.wobble) * 1.2;
   }
 
@@ -203,7 +206,7 @@ function startCeremony(mode, image, message) {
   if (fallbackTimer) clearTimeout(fallbackTimer);
   fallbackTimer = setTimeout(() => {
     if (ceremonyMessage.hidden) revealMessage(message);
-  }, 9000);
+  }, 6500);
 
   const sketch = (p) => {
     let particles = [];
@@ -211,16 +214,18 @@ function startCeremony(mode, image, message) {
     let messageShown = false;
     let W, H;
 
+    let startMs = 0;
+
     p.setup = () => {
-      const holder = document.getElementById('canvas-holder');
-      W = holder.clientWidth || window.innerWidth || 800;
-      H = holder.clientHeight || window.innerHeight || 600;
+      W = window.innerWidth || 800;
+      H = window.innerHeight || 600;
       const c = p.createCanvas(W, H);
       c.parent('canvas-holder');
       p.pixelDensity(1);
       // 最初のフレームは背景を塗りつぶしておく
       p.background(7, 9, 18);
       buildParticles();
+      startMs = p.millis();
     };
 
     function buildParticles() {
@@ -278,44 +283,49 @@ function startCeremony(mode, image, message) {
     }
 
     p.draw = () => {
+      // 開始からの経過秒数
+      const elapsed = (p.millis() - startMs) / 1000;
+
       // 残像を残すために半透明で塗り重ねる
       p.noStroke();
-      p.fill(7, 9, 18, 45);
+      p.fill(7, 9, 18, 55);
       p.rect(0, 0, W, H);
 
       p.blendMode(p.ADD);
       let aliveCount = 0;
       for (const part of particles) {
-        part.update(t, animSpeed);
+        part.update(elapsed, animSpeed);
         part.draw(p);
         if (!part.done) aliveCount++;
       }
       p.blendMode(p.BLEND);
 
       // ときどき、上に昇る小さな光の筋
-      if (t % 8 === 0) {
+      if (p.frameCount % 8 === 0) {
         p.fill(255, 243, 214, 40);
         p.circle(W / 2 + (Math.random() - 0.5) * 60, H * 0.2 + Math.random() * 40, 3);
       }
 
-      t += animSpeed;
-
-      // 粒がおおむね還ったらメッセージを表示
-      if (!messageShown && (aliveCount < particles.length * 0.12 || t > 520)) {
+      // 粒がおおむね還ったら（または経過4.5秒で）メッセージを表示
+      if (!messageShown && (aliveCount < particles.length * 0.1 || elapsed * animSpeed > 4.5)) {
         messageShown = true;
         revealMessage(message);
       }
     };
 
     p.windowResized = () => {
-      const holder = document.getElementById('canvas-holder');
-      W = holder.clientWidth || window.innerWidth || 800;
-      H = holder.clientHeight || window.innerHeight || 600;
+      W = window.innerWidth || 800;
+      H = window.innerHeight || 600;
       p.resizeCanvas(W, H);
     };
   };
 
-  p5Instance = new p5(sketch);
+  // レイアウトが確定してから p5 を起動（キャンバスが潰れるのを防ぐ）
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      p5Instance = new p5(sketch);
+    });
+  });
 }
 
 function revealMessage(message) {
