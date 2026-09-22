@@ -3,7 +3,7 @@
    ========================================================= */
 
 /* ---------- アプリのバージョン ---------- */
-const APP_VERSION = 'v1.4.0';
+const APP_VERSION = 'v1.4.1';
 (function showVersion() {
   const badge = document.getElementById('version-badge');
   if (badge) badge.textContent = APP_VERSION;
@@ -39,6 +39,7 @@ const dropzone = document.getElementById('thing-dropzone');
 const fileInput = document.getElementById('thing-photo');
 const preview = document.getElementById('thing-preview');
 const hint = document.getElementById('thing-hint');
+const changeHint = document.getElementById('thing-change-hint');
 let uploadedImage = null; // HTMLImageElement
 
 dropzone.addEventListener('click', () => fileInput.click());
@@ -64,14 +65,35 @@ function handleFile(file) {
   if (!file.type.startsWith('image/')) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    preview.src = ev.target.result;
-    preview.hidden = false;
-    hint.hidden = true;
+    const dataUrl = ev.target.result;
     const img = new Image();
-    img.onload = () => { uploadedImage = img; };
-    img.src = ev.target.result;
+    img.onload = () => {
+      // 画像が正しく読み込めてから初めてプレビューを表示する
+      uploadedImage = img;
+      preview.src = dataUrl;
+      preview.alt = file.name || '選んだ写真';
+      preview.hidden = false;
+      hint.hidden = true;
+      changeHint.hidden = false;
+      dropzone.classList.add('has-image');
+    };
+    img.onerror = () => {
+      // 読み込めなかった場合は初期状態のまま
+      resetPhotoPreview();
+    };
+    img.src = dataUrl;
   };
   reader.readAsDataURL(file);
+}
+
+function resetPhotoPreview() {
+  uploadedImage = null;
+  preview.hidden = true;
+  preview.removeAttribute('src');
+  preview.alt = '';
+  hint.hidden = false;
+  changeHint.hidden = true;
+  dropzone.classList.remove('has-image');
 }
 
 /* ---------- お別れメッセージ生成 ---------- */
@@ -397,9 +419,7 @@ closeBtn.addEventListener('click', () => {
 function resetForms() {
   // モノ
   document.getElementById('thing-form').reset();
-  preview.hidden = true; preview.src = '';
-  hint.hidden = false;
-  uploadedImage = null;
+  resetPhotoPreview();
   // 思い出
   document.getElementById('memory-form').reset();
 }
