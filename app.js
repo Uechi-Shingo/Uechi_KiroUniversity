@@ -3,7 +3,7 @@
    ========================================================= */
 
 /* ---------- アプリのバージョン ---------- */
-const APP_VERSION = 'v1.2.1-debug';
+const APP_VERSION = 'v1.2.2-debug';
 (function showVersion() {
   const badge = document.getElementById('version-badge');
   if (badge) badge.textContent = APP_VERSION;
@@ -228,16 +228,20 @@ function startCeremony(mode, image, message) {
     let startMs = 0;
 
     p.setup = () => {
-      W = window.innerWidth || 800;
-      H = window.innerHeight || 600;
-      const c = p.createCanvas(W, H);
-      c.parent('canvas-holder');
-      p.pixelDensity(1);
-      // 最初のフレームは背景を塗りつぶしておく
-      p.background(7, 9, 18);
-      buildParticles();
-      startMs = p.millis();
-      dbg('setup done\ncanvas: ' + W + 'x' + H + '\nparticles: ' + particles.length);
+      try {
+        W = window.innerWidth || 800;
+        H = window.innerHeight || 600;
+        const c = p.createCanvas(W, H);
+        c.parent('canvas-holder');
+        p.pixelDensity(1);
+        // 最初のフレームは背景を塗りつぶしておく
+        p.background(7, 9, 18);
+        buildParticles();
+        startMs = p.millis();
+        dbg('setup done\ncanvas: ' + W + 'x' + H + '\nparticles: ' + particles.length);
+      } catch (err) {
+        dbg('ERROR in setup: ' + err.message);
+      }
     };
 
     function buildParticles() {
@@ -338,12 +342,13 @@ function startCeremony(mode, image, message) {
     };
   };
 
-  // レイアウトが確定してから p5 を起動（キャンバスが潰れるのを防ぐ）
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      p5Instance = new p5(sketch);
-    });
-  });
+  // p5 を即座に起動する（window 実寸を使うので遅延は不要）
+  try {
+    p5Instance = new p5(sketch);
+  } catch (err) {
+    dbg('ERROR at new p5(): ' + err.message);
+    revealMessage(message);
+  }
 }
 
 function revealMessage(message) {
