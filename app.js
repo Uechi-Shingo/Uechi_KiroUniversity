@@ -129,13 +129,13 @@ class Particle {
   }
 
   update(t, speed) {
-    if (t < this.delay) return;
+    if (t < this.delay) { this.life = 1; return; }
     this.wobble += this.wobbleSpeed * speed;
     this.x += (this.driftX + Math.sin(this.wobble) * 0.4) * speed;
     this.y -= this.riseSpeed * speed;
-    // 上に行くほど消えていく
-    const progress = (this.homeY - this.y) / (this.homeY + 100);
-    this.life = Math.max(0, 1 - progress * 1.1);
+    // 発ってからの経過時間で、ゆっくり消えていく
+    const traveled = t - this.delay;
+    this.life = Math.max(0, 1 - traveled / 260);
     this.size = 2.6 + Math.sin(this.wobble) * 1.2;
   }
 
@@ -154,6 +154,8 @@ class Particle {
   get done() { return this.life <= 0; }
 }
 
+let fallbackTimer = null;
+
 function startCeremony(mode, image, message) {
   ceremony.hidden = false;
   ceremonyMessage.hidden = true;
@@ -161,6 +163,15 @@ function startCeremony(mode, image, message) {
   farewellText.textContent = '';
 
   if (p5Instance) { p5Instance.remove(); p5Instance = null; }
+  // 前回のキャンバスが残っていたら消す
+  const holder = document.getElementById('canvas-holder');
+  if (holder) holder.innerHTML = '';
+
+  // 保険：何があっても数秒後には必ずメッセージを表示する
+  if (fallbackTimer) clearTimeout(fallbackTimer);
+  fallbackTimer = setTimeout(() => {
+    if (ceremonyMessage.hidden) revealMessage(message);
+  }, 9000);
 
   const sketch = (p) => {
     let particles = [];
@@ -169,11 +180,14 @@ function startCeremony(mode, image, message) {
     let W, H;
 
     p.setup = () => {
-      W = window.innerWidth;
-      H = window.innerHeight;
+      const holder = document.getElementById('canvas-holder');
+      W = holder.clientWidth || window.innerWidth || 800;
+      H = holder.clientHeight || window.innerHeight || 600;
       const c = p.createCanvas(W, H);
       c.parent('canvas-holder');
       p.pixelDensity(1);
+      // 最初のフレームは背景を塗りつぶしておく
+      p.background(7, 9, 18);
       buildParticles();
     };
 
@@ -262,8 +276,9 @@ function startCeremony(mode, image, message) {
     };
 
     p.windowResized = () => {
-      W = window.innerWidth;
-      H = window.innerHeight;
+      const holder = document.getElementById('canvas-holder');
+      W = holder.clientWidth || window.innerWidth || 800;
+      H = holder.clientHeight || window.innerHeight || 600;
       p.resizeCanvas(W, H);
     };
   };
@@ -272,6 +287,8 @@ function startCeremony(mode, image, message) {
 }
 
 function revealMessage(message) {
+  if (!ceremonyMessage.hidden) return; // 二重表示を防ぐ
+  if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
   ceremonyMessage.hidden = false;
   // 一文字ずつ、そっと浮かび上がらせる
   farewellText.textContent = '';
