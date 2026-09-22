@@ -30,7 +30,8 @@
           <label for="thing-photo">モノの写真</label>
           <div class="dropzone" id="thing-dropzone">
             <input type="file" id="thing-photo" accept="image/*" hidden />
-            <img id="thing-preview" alt="プレビュー" hidden />
+            <img id="thing-preview" alt="" hidden />
+            <span class="change-hint" id="thing-change-hint" hidden>写真を変える</span>
             <div class="dropzone-hint" id="thing-hint">
               <span class="dz-icon">＋</span>
               <span>写真を選ぶ</span>
@@ -83,7 +84,7 @@
     <small>写真もテキストも、どこにも保存されません。すべてこの画面の中だけで還っていきます。</small>
   </footer>
 
-  <div class="version-badge" id="version-badge">v1.4.0</div>
+  <div class="version-badge" id="version-badge">v1.4.1</div>
 
   <script src="app.js"></script>
 </body>
