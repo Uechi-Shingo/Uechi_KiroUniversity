@@ -3,7 +3,7 @@
    ========================================================= */
 
 /* ---------- アプリのバージョン ---------- */
-const APP_VERSION = 'v1.2.2-debug';
+const APP_VERSION = 'v1.3.0-debug';
 (function showVersion() {
   const badge = document.getElementById('version-badge');
   if (badge) badge.textContent = APP_VERSION;
@@ -128,7 +128,9 @@ function buildMemoryMessage(text) {
   return isLong ? pick(memoryRepliesLong) : pick(memoryReplies);
 }
 
-/* ---------- 供養アニメーション (p5.js) ---------- */
+/* ---------- 供養アニメーション (Canvas 2D) ---------- */
+// p5.js のインスタンス初期化が不安定だったため、
+// 素の Canvas 2D + requestAnimationFrame で実装し直した堅牢版。
 const ceremony = document.getElementById('ceremony');
 const ceremonyMessage = document.getElementById('ceremony-message');
 const farewellText = document.getElementById('farewell-text');
@@ -136,54 +138,53 @@ const fromLabel = document.getElementById('from-label');
 const closeBtn = document.getElementById('close-btn');
 const speedSlider = document.getElementById('speed');
 
-let p5Instance = null;
 let animSpeed = 1;
+let rafId = null;
 speedSlider.addEventListener('input', (e) => { animSpeed = parseFloat(e.target.value); });
 
 // パーティクル：写真の各サンプル点、または思い出の光の粒
 class Particle {
-  constructor(x, y, r, g, b, cx, cy) {
+  constructor(x, y, r, g, b) {
     this.homeX = x;
     this.homeY = y;
     this.x = x;
     this.y = y;
     this.r = r; this.g = g; this.b = b;
-    this.cx = cx; this.cy = cy;
     this.size = 2.6;
     // 上へ、少し広がりながら還る
     this.wobble = Math.random() * Math.PI * 2;
     this.wobbleSpeed = 1.2 + Math.random() * 2.4;   // 揺れ（毎秒）
     this.delay = Math.random() * 1.1;               // 発つまでの遅れ（秒）
-    this.riseSpeed = 60 + Math.random() * 120;       // 上昇速度（px/秒）
-    this.driftX = (Math.random() - 0.5) * 40;        // 横ゆらぎ（px/秒）
+    this.riseSpeed = 60 + Math.random() * 120;      // 上昇速度（px/秒）
+    this.driftX = (Math.random() - 0.5) * 40;       // 横ゆらぎ（px/秒）
     this.life = 1;
-    this.fadeDur = 2.2;                              // 消えるまでの時間（秒）
+    this.fadeDur = 2.2;                             // 消えるまでの時間（秒）
   }
 
-  // elapsed: 開始からの経過秒数 / speed: 速度倍率
-  update(elapsed, speed) {
-    const t = elapsed * speed;
+  // t: 開始からの経過秒数（速度倍率込み）
+  update(t) {
     if (t < this.delay) { this.life = 1; return; }
-    const dt = 1 / 60; // 位置更新の刻み（見た目の一貫性のため固定）
-    this.wobble += this.wobbleSpeed * dt;
-    this.x = this.homeX + Math.sin(this.wobble) * 14 + this.driftX * (t - this.delay);
-    this.y = this.homeY - this.riseSpeed * (t - this.delay);
-    // 発ってからの経過で、ゆっくり消えていく
     const traveled = t - this.delay;
+    this.wobble += this.wobbleSpeed * (1 / 60);
+    this.x = this.homeX + Math.sin(this.wobble) * 14 + this.driftX * traveled;
+    this.y = this.homeY - this.riseSpeed * traveled;
     this.life = Math.max(0, 1 - traveled / this.fadeDur);
     this.size = 2.6 + Math.sin(this.wobble) * 1.2;
   }
 
-  draw(pg) {
+  draw(ctx) {
     if (this.life <= 0) return;
-    pg.noStroke();
-    // 光の粒として描く
-    const a = this.life * 255;
-    pg.fill(this.r, this.g, this.b, a);
-    pg.circle(this.x, this.y, this.size);
+    const a = this.life;
     // ほのかな光暈
-    pg.fill(255, 243, 214, a * 0.25);
-    pg.circle(this.x, this.y, this.size * 2.4);
+    ctx.fillStyle = `rgba(255,243,214,${a * 0.22})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    // 光の粒
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${a})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   get done() { return this.life <= 0; }
@@ -193,162 +194,137 @@ let fallbackTimer = null;
 const debugEl = document.getElementById('debug-readout');
 function dbg(line) { if (debugEl) debugEl.textContent = line; }
 
+function buildParticles(mode, image, W, H) {
+  const particles = [];
+  const cx = W / 2;
+  const cy = H / 2;
+
+  if (mode === 'thing' && image && image.width > 0) {
+    // 写真をサンプリングして点群に
+    const maxDim = Math.min(W, H) * 0.5;
+    const ratio = image.width / image.height;
+    let dw, dh;
+    if (ratio >= 1) { dw = maxDim; dh = maxDim / ratio; }
+    else { dh = maxDim; dw = maxDim * ratio; }
+
+    // オフスクリーンcanvasに縮小描画してピクセルを読む
+    const grid = 4; // 点の間隔（px）
+    const sw = Math.max(20, Math.floor(dw / grid));
+    const sh = Math.max(20, Math.floor(dh / grid));
+    const off = document.createElement('canvas');
+    off.width = sw; off.height = sh;
+    const octx = off.getContext('2d');
+    octx.drawImage(image, 0, 0, sw, sh);
+    let data;
+    try {
+      data = octx.getImageData(0, 0, sw, sh).data;
+    } catch (e) {
+      data = null; // 万一読めなければ下のフォールバックへ
+    }
+    if (data) {
+      for (let yy = 0; yy < sh; yy++) {
+        for (let xx = 0; xx < sw; xx++) {
+          const idx = (yy * sw + xx) * 4;
+          const alpha = data[idx + 3];
+          if (alpha < 30) continue;
+          const px = cx - dw / 2 + xx * grid;
+          const py = cy - dh / 2 + yy * grid;
+          particles.push(new Particle(px, py, data[idx], data[idx + 1], data[idx + 2]));
+        }
+      }
+    }
+  }
+
+  // モノで粒が作れなかった場合、または思い出モード：光の粒をふわりと配置
+  if (particles.length === 0) {
+    const count = 340;
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const rad = Math.random() * Math.min(W, H) * 0.22;
+      const px = cx + Math.cos(ang) * rad;
+      const py = cy + Math.sin(ang) * rad * 0.6;
+      const warm = Math.random();
+      const r = warm > 0.5 ? 255 : 160;
+      const g = warm > 0.5 ? 217 : 196;
+      const b = warm > 0.5 ? 160 : 255;
+      particles.push(new Particle(px, py, r, g, b));
+    }
+  }
+  return particles;
+}
+
 function startCeremony(mode, image, message) {
   ceremony.hidden = false;
   ceremonyMessage.hidden = true;
   fromLabel.textContent = mode === 'thing' ? '— モノより —' : '— 思い出より —';
   farewellText.textContent = '';
 
-  // p5.js が読み込めているか確認
-  if (typeof p5 === 'undefined') {
-    dbg('ERROR: p5.js が読み込めていません (CDN失敗の可能性)');
-    revealMessage(message);
-    return;
-  }
+  // 前回のアニメーションを止める
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
 
-  if (p5Instance) { p5Instance.remove(); p5Instance = null; }
-  // 前回のキャンバスが残っていたら消す
+  // キャンバスを用意する
   const holder = document.getElementById('canvas-holder');
-  if (holder) holder.innerHTML = '';
+  holder.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  const W = window.innerWidth || 800;
+  const H = window.innerHeight || 600;
+  canvas.width = W;
+  canvas.height = H;
+  holder.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
 
-  dbg('starting... p5 OK');
+  // 粒を生成
+  const particles = buildParticles(mode, image, W, H);
+  dbg('canvas: ' + W + 'x' + H + '\nparticles: ' + particles.length);
+
+  // 背景を塗る
+  ctx.fillStyle = 'rgb(7,9,18)';
+  ctx.fillRect(0, 0, W, H);
+
+  let messageShown = false;
+  let frame = 0;
+  const startMs = performance.now();
 
   // 保険：何があっても数秒後には必ずメッセージを表示する
   if (fallbackTimer) clearTimeout(fallbackTimer);
   fallbackTimer = setTimeout(() => {
     if (ceremonyMessage.hidden) revealMessage(message);
-  }, 6500);
+  }, 8000);
 
-  const sketch = (p) => {
-    let particles = [];
-    let t = 0;
-    let messageShown = false;
-    let W, H;
+  function loop() {
+    frame++;
+    const elapsed = ((performance.now() - startMs) / 1000) * animSpeed;
 
-    let startMs = 0;
+    // 残像を残すために半透明で塗り重ねる
+    ctx.fillStyle = 'rgba(7,9,18,0.22)';
+    ctx.fillRect(0, 0, W, H);
 
-    p.setup = () => {
-      try {
-        W = window.innerWidth || 800;
-        H = window.innerHeight || 600;
-        const c = p.createCanvas(W, H);
-        c.parent('canvas-holder');
-        p.pixelDensity(1);
-        // 最初のフレームは背景を塗りつぶしておく
-        p.background(7, 9, 18);
-        buildParticles();
-        startMs = p.millis();
-        dbg('setup done\ncanvas: ' + W + 'x' + H + '\nparticles: ' + particles.length);
-      } catch (err) {
-        dbg('ERROR in setup: ' + err.message);
-      }
-    };
+    // 加算合成で光らせる
+    ctx.globalCompositeOperation = 'lighter';
+    let aliveCount = 0;
+    for (const part of particles) {
+      part.update(elapsed);
+      part.draw(ctx);
+      if (!part.done) aliveCount++;
+    }
+    ctx.globalCompositeOperation = 'source-over';
 
-    function buildParticles() {
-      particles = [];
-      const cx = W / 2;
-      const cy = H / 2;
-
-      if (mode === 'thing' && image) {
-        // 写真をサンプリングして点群に
-        const maxDim = Math.min(W, H) * 0.42;
-        const ratio = image.width / image.height;
-        let dw, dh;
-        if (ratio >= 1) { dw = maxDim; dh = maxDim / ratio; }
-        else { dh = maxDim; dw = maxDim * ratio; }
-
-        // オフスクリーンに縮小描画してピクセルを読む
-        const grid = 4; // 点の間隔（px）
-        const sampleW = Math.max(20, Math.floor(dw / grid));
-        const sampleH = Math.max(20, Math.floor(dh / grid));
-        const pg = p.createGraphics(sampleW, sampleH);
-        pg.image(image, 0, 0, sampleW, sampleH);
-        pg.loadPixels();
-
-        for (let yy = 0; yy < sampleH; yy++) {
-          for (let xx = 0; xx < sampleW; xx++) {
-            const idx = (yy * sampleW + xx) * 4;
-            const r = pg.pixels[idx];
-            const g = pg.pixels[idx + 1];
-            const b = pg.pixels[idx + 2];
-            const a = pg.pixels[idx + 3];
-            if (a < 30) continue;
-            // 明るすぎる/暗すぎる背景も含め全部を粒に
-            const px = cx - dw / 2 + xx * grid;
-            const py = cy - dh / 2 + yy * grid;
-            particles.push(new Particle(px, py, r, g, b, cx, cy));
-          }
-        }
-        pg.remove();
-      } else {
-        // 思い出：文字数に応じた光の粒をふわりと配置
-        const count = 320;
-        for (let i = 0; i < count; i++) {
-          const ang = Math.random() * Math.PI * 2;
-          const rad = Math.random() * Math.min(W, H) * 0.22;
-          const px = cx + Math.cos(ang) * rad;
-          const py = cy + Math.sin(ang) * rad * 0.6;
-          // 暖色〜青の光
-          const warm = Math.random();
-          const r = warm > 0.5 ? 255 : 160;
-          const g = warm > 0.5 ? 217 : 196;
-          const b = warm > 0.5 ? 160 : 255;
-          particles.push(new Particle(px, py, r, g, b, cx, cy));
-        }
-      }
+    if (frame % 15 === 0) {
+      dbg('running f=' + frame + '\ncanvas: ' + W + 'x' + H +
+          '\nparticles: ' + particles.length + ' alive: ' + aliveCount +
+          '\nelapsed: ' + elapsed.toFixed(1) + 's');
     }
 
-    p.draw = () => {
-      // 開始からの経過秒数
-      const elapsed = (p.millis() - startMs) / 1000;
+    // 粒がおおむね還ったら（または経過4.5秒で）メッセージを表示
+    if (!messageShown && (aliveCount < particles.length * 0.08 || elapsed > 4.5)) {
+      messageShown = true;
+      revealMessage(message);
+    }
 
-      // 残像を残すために半透明で塗り重ねる
-      p.noStroke();
-      p.fill(7, 9, 18, 55);
-      p.rect(0, 0, W, H);
-
-      p.blendMode(p.ADD);
-      let aliveCount = 0;
-      for (const part of particles) {
-        part.update(elapsed, animSpeed);
-        part.draw(p);
-        if (!part.done) aliveCount++;
-      }
-      p.blendMode(p.BLEND);
-
-      // ときどき、上に昇る小さな光の筋
-      if (p.frameCount % 8 === 0) {
-        p.fill(255, 243, 214, 40);
-        p.circle(W / 2 + (Math.random() - 0.5) * 60, H * 0.2 + Math.random() * 40, 3);
-      }
-
-      if (p.frameCount % 15 === 0) {
-        dbg('running f=' + p.frameCount + '\ncanvas: ' + W + 'x' + H +
-            '\nparticles: ' + particles.length + ' alive: ' + aliveCount +
-            '\nelapsed: ' + elapsed.toFixed(1) + 's');
-      }
-
-      // 粒がおおむね還ったら（または経過4.5秒で）メッセージを表示
-      if (!messageShown && (aliveCount < particles.length * 0.1 || elapsed * animSpeed > 4.5)) {
-        messageShown = true;
-        revealMessage(message);
-      }
-    };
-
-    p.windowResized = () => {
-      W = window.innerWidth || 800;
-      H = window.innerHeight || 600;
-      p.resizeCanvas(W, H);
-    };
-  };
-
-  // p5 を即座に起動する（window 実寸を使うので遅延は不要）
-  try {
-    p5Instance = new p5(sketch);
-  } catch (err) {
-    dbg('ERROR at new p5(): ' + err.message);
-    revealMessage(message);
+    // 粒が全部消えてメッセージも出たら、静かに描画継続（ゆらぎの余韻）
+    rafId = requestAnimationFrame(loop);
   }
+  rafId = requestAnimationFrame(loop);
 }
 
 function revealMessage(message) {
@@ -368,7 +344,9 @@ function revealMessage(message) {
 
 closeBtn.addEventListener('click', () => {
   ceremony.hidden = true;
-  if (p5Instance) { p5Instance.remove(); p5Instance = null; }
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  const holder = document.getElementById('canvas-holder');
+  if (holder) holder.innerHTML = '';
   resetForms();
 });
 
