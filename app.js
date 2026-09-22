@@ -2,6 +2,15 @@
    そらへ — モノと思い出を手放すためのWebアプリ
    ========================================================= */
 
+/* ---------- 起動時：供養オーバーレイを確実に隠す ---------- */
+// CSS の display:flex が hidden 属性を上書きするのを防ぐための保険。
+(function ensureCeremonyHidden() {
+  const c = document.getElementById('ceremony');
+  const m = document.getElementById('ceremony-message');
+  if (c) c.hidden = true;
+  if (m) m.hidden = true;
+})();
+
 /* ---------- タブ切り替え ---------- */
 const tabs = document.querySelectorAll('.tab');
 const panels = {

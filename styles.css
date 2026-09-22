@@ -244,6 +244,11 @@ input[type="text"]:focus, textarea:focus {
   animation: fadeIn 0.8s ease;
 }
 
+/* hidden 属性が付いている間は必ず非表示（display:flex より優先させる） */
+.ceremony[hidden] {
+  display: none !important;
+}
+
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 #canvas-holder { position: absolute; inset: 0; }
